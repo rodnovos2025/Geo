@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Find the Capital</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+    #question {
+      padding: 1em;
+      text-align: center;
+      font-size: 1.2em;
+      background: #f8f8f8;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    #map {
+      flex: 1;
+    }
+    #result {
+      text-align: center;
+      padding: 1em;
+      font-size: 1.5em;
+      font-weight: bold;
+      background: #f8f8f8;
+      box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+    }
+    #next {
+      position: absolute;
+      bottom: 80px;
+      right: 20px;
+      background: white;
+      border-radius: 50%;
+      padding: 15px;
+      font-size: 1.5em;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      cursor: pointer;
+      display: none;
+      z-index: 1000;
+    }
+    .leaflet-control-attribution {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="question">Loading countries...</div>
+  <div id="map"></div>
+  <div id="result"></div>
+  <div id="next"><i class="fas fa-arrow-right"></i></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map', {
+      zoomControl: false,
+      attributionControl: false
+    }).setView([20, 0], 2);
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/' +
+      'World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 17
+    }).addTo(map);
+
+    let capitals = [];
+    let current = null;
+    let currentMarker = null;
+    let currentLine = null;
+    let timeoutId = null;
+
+    async function loadData() {
+      const res = await fetch('https://restcountries.com/v3.1/all');
+      const data = await res.json();
+      capitals = data
+        .filter(c => c.capital && c.capitalInfo && c.capitalInfo.latlng)
+        .map(c => ({
+          country: c.name.common,
+          capital: c.capital[0],
+          lat: c.capitalInfo.latlng[0],
+          lon: c.capitalInfo.latlng[1]
+        }));
+      newQuestion();
+    }
+
+    function newQuestion() {
+      document.getElementById('result').textContent = '';
+      document.getElementById('next').style.display = 'none';
+      current = capitals[Math.floor(Math.random() * capitals.length)];
+      document.getElementById('question').textContent =
+        `Find the capital of ${current.country}`;
+
+      timeoutId = setTimeout(() => {
+        document.getElementById('result').textContent = 'Time out';
+        document.getElementById('next').style.display = 'block';
+      }, 60000);
+    }
+
+    function distance(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) ** 2 +
+                Math.cos(lat1 * Math.PI / 180) *
+                Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) ** 2;
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    }
+
+    function handleAnswer(lat, lon) {
+      if (!current) return;
+      clearTimeout(timeoutId);
+
+      const d = Math.round(distance(lat, lon, current.lat, current.lon));
+
+      if (currentMarker) map.removeLayer(currentMarker);
+      if (currentLine) map.removeLayer(currentLine);
+
+      currentMarker = L.circleMarker([current.lat, current.lon], {
+        radius: 7,
+        color: '#f00',
+        fillColor: '#f00',
+        fillOpacity: 0.7
+      }).addTo(map);
+
+      currentLine = L.polyline([[lat, lon], [current.lat, current.lon]], {
+        color: 'red',
+        weight: 2,
+        dashArray: '4, 6'
+      }).addTo(map);
+
+      document.getElementById('result').textContent = 
+        `${d} km – ${current.capital}`;
+      document.getElementById('next').style.display = 'block';
+    }
+
+    map.on('click', e => {
+      handleAnswer(e.latlng.lat, e.latlng.lng);
+    });
+
+    document.getElementById('next').addEventListener('click', () => {
+      if (currentMarker) map.removeLayer(currentMarker);
+      if (currentLine) map.removeLayer(currentLine);
+      newQuestion();
+    });
+
+    loadData();
+  </script>
+</body>
+</html>
